@@ -30,7 +30,7 @@ template<typename T, typename TVALUE>
 unsigned int edit_distance_bpv(T &cmap, int64_t const *vec, size_t const &vecsize, unsigned int const &tmax, unsigned int const &tlen) {
     int D = tmax * 64 + tlen;
     TVALUE D0, HP, HN, VP, VN;
-    uint64_t top = (1LL << (tlen - 1));  // 末尾のvectorに適用
+    uint64_t top = (1LL << (tlen - 1));  // applied to the trailing vector
     uint64_t lmb = (1LL << 63);
 
     for(size_t i = 0; i <= tmax; ++i) {
@@ -63,7 +63,7 @@ unsigned int edit_distance_bpv(T &cmap, int64_t const *vec, size_t const &vecsiz
 /// c.f. http://handasse.blogspot.com/2009/04/c_29.html
 template<typename T>
 unsigned int edit_distance_dp(T const *str1, size_t const size1, T const *str2, size_t const size2) {
-    // vectorより固定長配列の方が速いが、文字列が長い時の保険でのみ呼ばれるのでサイズを決め打ちできない
+    // Fixed-length arrays are faster than vectors, but the size cannot be fixed because they are only called for insurance when the string is long.
     vector< vector<uint32_t> > d(2, vector<uint32_t>(size2 + 1));
     d[0][0] = 0;
     d[1][0] = 1;
@@ -103,14 +103,14 @@ unsigned int edit_distance_map_(int64_t const *a, size_t const asize, int64_t co
 unsigned int edit_distance(const int64_t *a, const unsigned int asize, const int64_t *b, const unsigned int bsize) {
     if(asize == 0) return bsize;
     else if(bsize == 0) return asize;
-    // 要素数の大きいほうがa
+    // The one with the larger number of elements is a
     int64_t const *ap, *bp;
     unsigned int const *asizep, *bsizep;
     if(asize < bsize) ap = b, bp = a, asizep = &bsize, bsizep = &asize;
     else ap = a, bp = b, asizep = &asize, bsizep = &bsize;
-    // 必要な配列サイズを調べる
-    size_t vsize = ((*asizep - 1) >> 6) + 1;  // 64までは1, 128までは2, ...
-    // bit-parallelでできそうな限界を超えたら要素数の小さい方をaとする。
+    // Find out the required array size
+    size_t vsize = ((*asizep - 1) >> 6) + 1;  // 1 up to 64, 2 up to 128, ...
+    // 	If the limit that can be achieved with bit-parallel is exceeded, the smaller number of elements is set as a.
     if(vsize > 10) {
         int64_t const *_ = ap;
         unsigned int const *__ = asizep;
@@ -128,5 +128,5 @@ unsigned int edit_distance(const int64_t *a, const unsigned int asize, const int
     else if(vsize == 8) return edit_distance_map_<8>(ap, *asizep, bp, *bsizep);
     else if(vsize == 9) return edit_distance_map_<9>(ap, *asizep, bp, *bsizep);
     else if(vsize == 10) return edit_distance_map_<10>(ap, *asizep, bp, *bsizep);
-    return edit_distance_dp<int64_t>(ap, *asizep, bp, *bsizep);  // dynamic programmingに任せる
+    return edit_distance_dp<int64_t>(ap, *asizep, bp, *bsizep);  // Leave it to dynamic programming
 }
