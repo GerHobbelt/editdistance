@@ -67,10 +67,10 @@ unsigned int edit_distance_dp(T const *str1, size_t const size1, T const *str2, 
     vector< vector<uint32_t> > d(2, vector<uint32_t>(size2 + 1));
     d[0][0] = 0;
     d[1][0] = 1;
-    for (int i = 0; i < size2 + 1; i++) d[0][i] = i;
-    for (int i = 1; i < size1 + 1; i++) {
+    for (size_t i = 0; i < size2 + 1; i++) d[0][i] = i;
+    for (size_t i = 1; i < size1 + 1; i++) {
         d[i&1][0] = d[(i-1)&1][0] + 1;
-        for (int j = 1; j < size2 + 1; j++) {
+        for (size_t j = 1; j < size2 + 1; j++) {
             d[i&1][j] = min(min(d[(i-1)&1][j], d[i&1][j-1]) + 1, d[(i-1)&1][j-1] + (str1[i-1] == str2[j-1] ? 0 : 1));
         }
     }
