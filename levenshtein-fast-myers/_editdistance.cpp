@@ -75,7 +75,7 @@ C++: Algorithm to find edit distance
 
 4/29/2009
 
-Edit distance is a numerical value that indicates how different two strings are, and often refers to Levenshtein distance . It calculates the minimum number of operations necessary to insert, delete, and replace characters as one operation. For example, if you want to find the edit distance between kitten and sitting, you can change kitten to sitting with three operations as shown below, so the edit distance will be 3.
+Edit distance is a numerical value that indicates how different two strings are, and often refers to Levenshtein distance. It calculates the minimum number of operations necessary to insert, delete, and replace characters as one operation. For example, if you want to find the edit distance between "kitten" and "sitting", you can change "kitten" to "sitting" with three operations as shown below, so the edit distance will be 3.
 
 1. sitten (replace k with s)
 2. sittin (replace e with i)
@@ -91,17 +91,27 @@ Probably the most common algorithm for determining edit distance is dynamic prog
 
 int edit_distance_dp_basic(const string& str1, const string& str2)
 {
-    static int d[SIZE][SIZE];
+	const auto SIZE = 128;
+	// allocate (no initialization)
+	auto d = new int[SIZE][SIZE];
+	auto l1 = str1.size();
+	auto l2 = str2.size();
+	if (l1 >= SIZE)
+		l1 = SIZE - 1;
+	if (l2 >= SIZE)
+		l2 = SIZE - 1;
 
-    for (int i = 0; i < str1.size() + 1; i++) 
+	for (int i = 0; i <= l1; i++)
 		d[i][0] = i;
-    for (int i = 0; i < str2.size() + 1; i++) 
+    for (int i = 0; i <= l2; i++) 
 		d[0][i] = i;
-    for (int i = 1; i < str1.size() + 1; i++)
-        for (int j = 1; j < str2.size() + 1; j++)
-            d[i][j] = min(min(d[i-1][j], d[i][j-1]) + 1, d[i-1][j-1] + (str1[ i-1] == str2[j-1] ? 0 : 1));
+    for (int i = 1; i <= l1; i++)
+        for (int j = 1; j <= l2; j++)
+            d[i][j] = min(min(d[i-1][j], d[i][j-1]) + 1, d[i-1][j-1] + (str1[i-1] == str2[j-1] ? 0 : 1));
 
-    return d[str1.size()][str2.size()];
+    auto rv = d[l1][l2];
+	delete[] d;
+	return rv;
 } 
 
 /*
@@ -116,24 +126,27 @@ Next, we will show the O(ND) algorithm. N is the sum of the two number of elemen
 
 int edit_distance_ond(const string& str1, const string& str2)
 {
-    static int V[SIZE];
+	const auto l1 = str1.size();
+	const auto l2 = str2.size();
+	const auto SIZE = l1 + l2 + l1 + 1;
+	auto V = new int[SIZE];
     int x, y;
-    int offset = str1.size();
+    int offset = l1;
     V[offset + 1] = 0;
 
-    for (int D = 0; D <= str1.size() + str2.size(); D++) {
+    for (int D = 0; D <= l1 + l2; D++) {
         for (int k = -D; k <= D; k += 2) {
             if (k == -D || k != D && V[k-1+offset] < V[k+1+offset]) 
 				x = V[k+1+offset];
             else 
 				x = V[k-1+offset] + 1;
             y = x - k;
-            while (x < str1.size() && y < str2.size() && str1[x] == str2[y]) {
+            while (x < l1 && y < l2 && str1[x] == str2[y]) {
                 x++;
                 y++;
             }
             V[k+offset] = x;
-            if (x >= str1.size() && y >= str2.size()) 
+            if (x >= l1 && y >= l2) 
 				return D;
         }
     }
