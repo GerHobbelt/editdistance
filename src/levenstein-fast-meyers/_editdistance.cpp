@@ -20,11 +20,202 @@
 #include <vector>
 #include <iostream>
 #include <bitset>
+#include <tuple>
 #include <algorithm>
 
 #include "./_editdistance.h"
 
+#include "../monolithic_examples.h"
+
+
 using namespace std;
+
+// as std::array and std::vector are too limited for performance (std::array only accepts constant-sized dimension, std::vector always auto-initializes at O(N) where N is array size)
+// we define our own, similar, 1D and 2D array types:
+
+
+template <class T, size_t size>
+class array1D { // fixed, *dynamically sized*, array of values
+public:
+	using value_type      = T;
+	using size_type       = size_t;
+	using pointer         = T*;
+	using const_pointer   = const T*;
+	using reference       = T&;
+	using const_reference = const T&;
+
+	constexpr size_type size() const noexcept {
+		return size;
+	}
+
+	constexpr reference operator[](size_type pos) noexcept {
+		return elems[pos];
+	}
+
+	constexpr const_reference operator[](size_type pos) const noexcept
+		/* strengthened */ {
+		return elems[pos];
+	}
+
+	constexpr T* data() noexcept {
+		return elems;
+	}
+
+	constexpr const T* data() const noexcept {
+		return elems;
+	}
+
+	T elems[size];
+};
+
+
+template <class T, size_t row_size, size_t col_size>
+class array2D { // fixed, *dynamically sized*, array of values
+public:
+	using value_type      = T;
+	using size_type       = size_t;
+	using pointer         = T*;
+	using const_pointer   = const T*;
+	using reference       = T&;
+	using const_reference = const T&;
+
+protected:
+	typedef T arr1D_t[row_size];
+
+public:
+	class _arr1Dfor2Daccessor_t {
+	public:
+		_arr1Dfor2Daccessor_t(arr1D_t &ref): elems1D(ref) {}
+
+		constexpr reference operator[](size_type pos) noexcept {
+			return elems1D[pos];
+		}
+
+		constexpr const_reference operator[](size_type pos) const noexcept
+			/* strengthened */ {
+			return elems1D[pos];
+		}
+
+	protected:
+		arr1D_t &elems1D;
+	};
+
+	constexpr size_type size() const noexcept {
+		return row_size * col_size;
+	}
+
+	constexpr const _arr1Dfor2Daccessor_t operator[](size_type pos) noexcept {
+		return elems[pos];
+	}
+
+	constexpr const _arr1Dfor2Daccessor_t operator[](size_type pos) const noexcept {
+		return elems[pos];
+	}
+
+	T elems[size];
+};
+
+
+template <class T>
+class array2D_dyn { // fixed, *dynamically sized*, array of values
+public:
+	using value_type      = T;
+	using size_type       = size_t;
+	using pointer         = T*;
+	using const_pointer   = const T*;
+	using reference       = T&;
+	using const_reference = const T&;
+
+#if defined(_DEBUG)
+#define DEBUG_ONLY(code)			code
+#define 𝓈							,      // Unicode glyph hack to make this comma symbol as obvious as possible while the compiler does not accept literal commas in preprocessor macro arguments
+#else
+#define DEBUG_ONLY(code)
+#endif
+
+	class _arr1Dfor2Daccessor_t {
+	public:
+		_arr1Dfor2Daccessor_t(pointer ref
+			DEBUG_ONLY(𝓈 pointer end)
+		):
+			elems1D(ref)
+			DEBUG_ONLY(𝓈 endptr(end))
+		{}
+
+		constexpr reference operator[](size_type col_pos) noexcept {
+			DEBUG_ONLY(
+				if (elems1D + col_pos >= endptr)
+					cerr << "kaboom!\n";
+			);
+			return elems1D[col_pos];
+		}
+
+		constexpr const_reference operator[](size_type col_pos) const noexcept {
+			DEBUG_ONLY(
+				if (elems1D + col_pos >= endptr)
+					cerr << "kaboom!\n";
+			);
+			return elems1D[col_pos];
+		}
+
+	protected:
+		pointer elems1D;
+		DEBUG_ONLY(pointer endptr);
+	};
+
+	array2D_dyn(size_type _row_size, size_type _col_size):
+		row_size(_row_size), col_size(_col_size)
+	{
+		auto count = size();
+		elems = new T[count]();
+		// https://isocpp.org/wiki/faq/exceptions#ctors-can-throw
+		// --> throws std::bad_alloc exception when out of memory
+		
+		//assert(elems != nullptr);
+	}
+
+	~array2D_dyn()
+	{
+		delete[] elems;
+	}
+
+	constexpr size_type size() const noexcept {
+		return row_size * col_size;
+	}
+
+	constexpr pointer data() const noexcept {
+		return elems;
+	}
+
+DEBUG_ONLY(
+	constexpr pointer end_of_data() const noexcept {
+		return elems + size();
+	}
+)
+
+	constexpr _arr1Dfor2Daccessor_t operator[](size_type row_pos) noexcept {
+		const auto offset = row_pos * col_size;
+		return _arr1Dfor2Daccessor_t(elems + offset
+			DEBUG_ONLY(𝓈 end_of_data())
+		);
+	}
+
+	constexpr const _arr1Dfor2Daccessor_t operator[](size_type row_pos) const noexcept {
+		const auto offset = row_pos * col_size;
+		return _arr1Dfor2Daccessor_t(elems + offset
+			DEBUG_ONLY(𝓈 end_of_data())
+		);
+	}
+
+	size_type row_size;
+	size_type col_size;
+	pointer elems;
+};
+
+
+
+
+
 
 template<typename T, typename TVALUE>
 unsigned int edit_distance_bpv(T &cmap, int64_t const *vec, size_t const &vecsize, unsigned int const &tmax, unsigned int const &tlen) {
@@ -89,17 +280,19 @@ Probably the most common algorithm for determining edit distance is dynamic prog
 
 */
 
+
 int edit_distance_dp_basic(const string& str1, const string& str2)
 {
-	const auto SIZE = 128;
 	// allocate (no initialization)
-	auto d = new int[SIZE][SIZE];
-	auto l1 = str1.size();
-	auto l2 = str2.size();
-	if (l1 >= SIZE)
-		l1 = SIZE - 1;
-	if (l2 >= SIZE)
-		l2 = SIZE - 1;
+	const auto l1 = str1.size();
+	const auto l2 = str2.size();
+
+#if 0
+	// error C2971: 'array2D': template parameter 'row_size': 'l1': a variable with non-static storage duration cannot be used as a non-type argument
+	array2D<unsigned int, l1 + 1, l2 + 1> d;
+#else
+	array2D_dyn<unsigned int> d(l1 + 1, l2 + 1);
+#endif
 
 	for (int i = 0; i <= l1; i++)
 		d[i][0] = i;
@@ -110,7 +303,6 @@ int edit_distance_dp_basic(const string& str1, const string& str2)
             d[i][j] = min(min(d[i-1][j], d[i][j-1]) + 1, d[i-1][j-1] + (str1[i-1] == str2[j-1] ? 0 : 1));
 
     auto rv = d[l1][l2];
-	delete[] d;
 	return rv;
 } 
 
@@ -129,7 +321,7 @@ int edit_distance_ond(const string& str1, const string& str2)
 	const auto l1 = str1.size();
 	const auto l2 = str2.size();
 	const auto SIZE = l1 + l2 + l1 + 1;
-	auto V = new int[SIZE];
+	int *V = new int[SIZE];
     int x, y;
     int offset = l1;
     V[offset + 1] = 0;
@@ -146,11 +338,14 @@ int edit_distance_ond(const string& str1, const string& str2)
                 y++;
             }
             V[k+offset] = x;
-            if (x >= l1 && y >= l2) 
+			if (x >= l1 && y >= l2) {
+				delete[] V;
 				return D;
+			}
         }
     }
 
+	delete[] V;
     return -1;
 } 
 
@@ -177,22 +372,37 @@ int snake(int k, int y, const string& str1, const string& str2)
 int edit_distance_onp(const string& str1, const string& str2)
 {
     // required: s1->size() <= s2->size()
-    const string* const s1 = str1.size() > str2.size() ? &str2 : &str1;
-    const string* const s2 = str1.size() > str2.size() ? &str1 : &str2;
-    static int fp[SIZE];
-    int x, y, k, p;
-    int offset = s1->size() + 1;
-    int delta = s2->size() - s1->size();
+	auto l1 = str1.size();
+	auto l2 = str2.size();
+	const string* s1;
+    const string* s2;
+	if (l1 > l2) {
+		s1 = &str2;
+		s2 = &str1;
+		std::swap(l1, l2);
+	}
+	else {
+		s1 = &str1;
+		s2 = &str2;
+	}
+	const auto SIZE = l2 + l1 + 2;
+	int *fp = new int[SIZE];
+
+    int k, p;
+    int offset = l1 + 1;
+    int delta = l2 - l1;
     for (int i = 0; i < SIZE; i++) 
 		fp[i] = -1;
 
-    for (p = 0; fp[delta + offset] != s2->size(); p++) {
+    for (p = 0; fp[delta + offset] != l2; p++) {
         for(k = -p; k < delta; k++)
             fp[k + offset] = snake(k, max(fp[k-1+offset] + 1, fp[k+1+offset]), *s1, *s2);
         for(k = delta + p; k > delta; k--)
             fp[k + offset] = snake(k, max(fp[k-1+offset] + 1, fp[k+1+offset]), *s1, *s2);
         fp[delta + offset] = snake(delta, max(fp[delta-1+offset] + 1, fp[delta+1+offset]), *s1, *s2);
     }
+
+	delete[] fp;
 
     return delta + (p - 1) * 2;
 } 
@@ -255,7 +465,6 @@ int edit_distance_bit(const string& str1, const string& str2)
 
 /* 
 Incidentally, I tried using C++'s bitset to be able to perform operations on any number of bits. Bitset allows normal bitwise operations in most cases, so the code is not much different from the code above. However, since there is no addition operation available, we provided operator+() using operator overload. However, using bitset may not make much sense since you will lose the high-speed processing of bit operations. The code is below.
-
 */
 
 template<size_t N>
@@ -344,34 +553,136 @@ For reference, the code used for measurement is shown below.
 
 */
 
-void run(int (*func)(const string&, const string&), const string& arg1, const string& arg2, int num, const string& msg)
-{
-    clock_t start, finish;
+static const double target_duration = 10;
 
-    start = clock();
-    for (int i = 0; i < num - 1; i++) 
+static double measure_run_block(int (*func)(const string&, const string&), const string& arg1, const string& arg2, unsigned int num)
+{
+	clock_t start, finish;
+
+	start = clock();
+	for (int i = 0; i < num - 1; i++)
 		(*func)(arg1, arg2);
-    cout << msg << " : " << (*func)(arg1, arg2) << endl;
-    finish = clock();
-    cout << "Time: " << (double)(finish - start) / CLOCKS_PER_SEC << "s (" << num << " times)" << endl;
-    cout << endl;
+	finish = clock();
+	double duration = (double)(finish - start) / CLOCKS_PER_SEC;
+	return duration;
 }
 
-int main()
+static std::tuple<double, unsigned int, unsigned int> tune_run_count(int (*func)(const string&, const string&), const string& arg1, const string& arg2, unsigned int num) {
+	// always do a small, fast check series at the start to see how fast this thing will go: rough estimate.
+	// We do these fast checks each at a staggered 5% of the requested count, for our incoming run number may be
+	// an estimate from a previous run with a MUCH faster algorithm and thus WILDLY out of intended range.
+	//
+	// As such, we treat incoming `num` as a mere hint only! :-)
+	// 
+	// Instead, the driving target for us is `target_duration` for every benchmark run.
+	//
+	auto run_count = 1;
+	double dur = measure_run_block(func, arg1, arg2, run_count);
+	double dur_sum = dur;
+	int run_sum = run_count;
+	const double measure_duration = 1.0;
+	const double good_enough_test_duration = 0.66 * target_duration;
+
+	if (dur_sum >= good_enough_test_duration) {
+		return {dur_sum, run_sum, num};
+	}
+
+	// when this test was way too swift, we do a second fast check at a higher (~ more sensible) run count:
+	const double good_enough_initial_check_duration = 10.0 / CLOCKS_PER_SEC;
+	dur_sum = 0;
+	run_sum = 0;
+	while (dur < good_enough_initial_check_duration) {
+		run_count *= 20;
+		dur = measure_run_block(func, arg1, arg2, run_count);
+
+		// count this partial run against the total stats when the accuracy is supposed to be reasonable:
+		if (dur > 20.0 / CLOCKS_PER_SEC) {
+			dur_sum += dur;
+			run_sum += run_count;
+		}
+	}
+
+	if (dur_sum >= good_enough_test_duration) {
+		return {dur_sum, run_sum, num};
+	}
+
+	// now see if our quick check will land the run-time in the ballpark:
+#if 0
+	dur += 1.0 / CLOCKS_PER_SEC;   // prevent measured duration being zero for the division.
+#endif
+	auto est_rounds = run_count * target_duration / dur;
+	auto ratio = (est_rounds + 1.0) / (num + 1.0); // prevent DIV/0
+	if (0.75 < ratio && ratio < 1.3) {
+		// in ballpark: run as-is
+		dur = measure_run_block(func, arg1, arg2, num);
+
+		// count this partial run against the total stats when the accuracy is supposed to be reasonable:
+		if (dur > 20.0 / CLOCKS_PER_SEC) {
+			dur_sum += dur;
+			run_sum += num;
+		}
+		return {dur_sum, run_sum, num};
+	}
+
+	// otherwise (re-)tune our run count:
+
+#if 0
+	run_count = 1;
+	dur = target_duration; // set initial estimate high
+#endif
+	// tune run count until we have an estimate within 95% of target:
+	do {
+		dur += FLT_EPSILON;   // prevent measured duration being zero for the division.
+		auto rate = measure_duration / dur - 1;
+		run_count = std::ceil(run_count * (1 + rate));
+		dur = measure_run_block(func, arg1, arg2, run_count);
+
+		// count this partial run against the total stats when the accuracy is supposed to be reasonable:
+		if (dur > 20.0 / CLOCKS_PER_SEC) {
+			dur_sum += dur;
+			run_sum += run_count;
+		}
+	} while (dur_sum < measure_duration * 0.95);
+
+	// then scale up the runcount linearly to span (estimated) benchmark time slot.
+	run_count = std::ceil(run_sum * target_duration / dur_sum);
+
+	// and run the remainder of the required run count as the last partial benchmark block:
+	double run_remainder = (int)run_count - (int)run_sum;
+	ratio = run_remainder / run_count;
+	if (ratio < 0.25) {
+		// in ballpark, 'cause remainder of the run is small enough: no need to run the surplus block
+		return {dur_sum, run_sum, run_count};
+	}
+
+	dur = measure_run_block(func, arg1, arg2, run_remainder);
+
+	// count this partial run against the total stats when the accuracy is supposed to be reasonable:
+	if (dur > 20.0 / CLOCKS_PER_SEC) {
+		dur_sum += dur;
+		run_sum += run_count;
+	}
+	return {dur_sum, run_sum, run_count};
+}
+
+static unsigned int run(int (*func)(const string&, const string&), const string& arg1, const string& arg2, unsigned int num, const string& msg, bool silent = false)
 {
-    string str1 = "agtcaaaagtcagtcagtcagtcagtcacagtcagaaggcatccaaccga";
-    string str2 = "ccgttagtcagaaacagtcagtcagtcagtcagtccagtcttaggcccgga";
-
-    cout << str1 << endl;
-    cout << str2 << endl;
-    run(edit_distance_dp_basic, str1, str2, 100000, "dp ");
-    run(edit_distance_ond, str1, str2, 100000, "ond ");
-    run(edit_distance_onp, str1, str2, 100000, "onp ");
-    run(edit_distance_bit<unsigned long long>, str1, str2, 100000, "bit ");
-    run(edit_distance_bitset<60>, str1, str2, 100000, "bitset");
-
-    return 0;
+	auto [duration, run_count, run_count_10sec_est] = tune_run_count(func, arg1, arg2, num);
+	if (!silent) {
+		cout << msg << " : " << (*func)(arg1, arg2) << endl;
+		auto ops_per_sec = run_count / duration;
+		cout << "Time: " << duration << "s (" << run_count << " times) --> " << ops_per_sec << " ops/sec." << endl;
+		cout << endl;
+	}
+	return run_count_10sec_est;
 }
+
+
+static void example(int (*func)(const string&, const string&), const string& arg1, const string& arg2, unsigned int num, const string& msg)
+{
+	cout << msg << " --> return value: " << (*func)(arg1, arg2) << endl;
+}
+
 
 /*
 
@@ -557,3 +868,46 @@ bool edit_distance_criterion(const int64_t *a, const unsigned int asize, const i
 
 
 
+
+#if defined(BUILD_MONOLITHIC)
+#define main     editdist_test_main
+#endif
+
+
+int main()
+{
+	string str1 = "agtcaaaagtcagtcagtcagtcagtcacagtcagaaggcatccaaccga";
+	string str2 = "ccgttagtcagaaacagtcagtcagtcagtcagtccagtcttaggcccgga";
+
+	cout << str1 << endl;
+	cout << str2 << endl;
+
+	unsigned int run_count = 0;
+
+	example(edit_distance_dp_basic, str1, str2, run_count, "dp ");
+	example(edit_distance_ond, str1, str2, run_count, "ond ");
+	example(edit_distance_onp, str1, str2, run_count, "onp ");
+	example(edit_distance_bit<unsigned long long>, str1, str2, run_count, "bit ");
+	example(edit_distance_bitset<60>, str1, str2, run_count, "bitset");
+
+	cout << endl << " ----------------------------------- " << endl << endl;
+
+	run_count = run(edit_distance_dp_basic, str1, str2, run_count, "dp ");
+	//run_count = run(edit_distance_dp_basic, str1, str2, run_count, "dp ");
+	//run_count = run(edit_distance_dp_basic, str1, str2, run_count, "dp ");
+	run_count = run(edit_distance_ond, str1, str2, run_count, "ond ");
+	run_count = run(edit_distance_onp, str1, str2, run_count, "onp ");
+	run_count = run(edit_distance_bit<unsigned long long>, str1, str2, run_count, "bit ");
+	run_count = run(edit_distance_bitset<60>, str1, str2, run_count, "bitset");
+	//run_count = run(edit_distance_dp_basic, str1, str2, run_count, "dp ");
+
+#if 0
+	unsigned int edit_distance_dp(int64_t const *str1, size_t const size1, int64_t const *str2, size_t const size2);
+	template<typename T>
+	bool edit_distancec_dp(T const *str1, size_t const size1, T const *str2, size_t const size2, unsigned int const thr);
+	unsigned int edit_distance(const int64_t *a, const unsigned int asize, const int64_t *b, const unsigned int bsize);
+	bool edit_distance_criterion(const int64_t *a, const unsigned int asize, const int64_t *b, const unsigned int bsize, const unsigned int thr);
+#endif
+
+	return 0;
+}
