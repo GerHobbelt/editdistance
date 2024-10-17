@@ -874,7 +874,7 @@ bool edit_distance_criterion(const int64_t *a, const unsigned int asize, const i
 #endif
 
 
-int main()
+int main(void)
 {
 	string str1 = "agtcaaaagtcagtcagtcagtcagtcacagtcagaaggcatccaaccga";
 	string str2 = "ccgttagtcagaaacagtcagtcagtcagtcagtccagtcttaggcccgga";
